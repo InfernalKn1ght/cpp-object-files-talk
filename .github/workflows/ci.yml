@@ -28,9 +28,13 @@ jobs:
             build-essential \
             clang \
             rustc \
-            zig \
             binutils \
             gcc
+      
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
 
       - name: Install Rust target (x86_64)
         run: rustup target add x86_64-unknown-linux-gnu

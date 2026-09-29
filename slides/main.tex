@@ -558,65 +558,58 @@ zig build-obj src.zig -O ReleaseFast -fllvm \
   \small
   \begin{center}
     \setlength{\tabcolsep}{4pt}
-    \begin{tabularx}{0.98\textwidth}{lCCCCC}
-      \toprule
-      Язык / режим      & total & \texttt{.text} & data+rodata & \texttt{.debug\_*} & \texttt{.eh\_frame} \\
-      \midrule
-      C++ \texttt{-O2}  & \tbd  & \tbd           & \tbd        & \tbd               & \tbd                \\
-      Rust \texttt{-O2} & \tbd  & \tbd           & \tbd        & \tbd               & \tbd                \\
-      Zig ReleaseFast   & \tbd  & \tbd           & \tbd        & \tbd               & \tbd                \\
-      \bottomrule
-    \end{tabularx}
+    \IfFileExists{../results/table_sizes.tex}{%
+      \input{../results/table_sizes.tex}%
+    }{%
+      \fbox{\parbox{0.9\textwidth}{\centering
+        Не найден \texttt{results/table\_sizes.tex}. Сначала запустите
+        \texttt{scripts/report.py} (по умолчанию: режимы \texttt{O2,O2g}).}}}%
   \end{center}
+
   \smallskip
-  \centering
-  \IfFileExists{results/sizes.csv}{%
-    \begin{tikzpicture}
-      \begin{axis}[ybar stacked, width=0.7\textwidth, height=4.5cm,
-          symbolic x coords={cpp,rust,zig}, xtick=data, ylabel={байты},
-          legend style={font=\tiny}, tick label style={font=\tiny}]
-        \addplot table[x=lang,y=text,col sep=comma] {results/sizes.csv};
-        \addplot table[x=lang,y=data,col sep=comma] {results/sizes.csv};
-        \addplot table[x=lang,y=rodata,col sep=comma] {results/sizes.csv};
-        \addplot table[x=lang,y=debug,col sep=comma] {results/sizes.csv};
-        \legend{.text,.data,.rodata,.debug}
-      \end{axis}
-    \end{tikzpicture}}{%
-    \fbox{\parbox{0.8\textwidth}{\centering\scriptsize
-        График появится, когда будет создан \texttt{results/sizes.csv}\par
-        (колонки: lang,text,data,rodata,debug).}}}
+  \scriptsize
+  Все числовые значения в таблице суммированы по корпусу из 5 программ на каждый язык.
+  График \texttt{chart\_sizes.png} скрипт строит отдельно для режимов
+  \texttt{O2} и \texttt{O2g}.
 \end{frame}
 
 \begin{frame}{Символы, секции и релокации}
   \small
   \begin{center}
     \setlength{\tabcolsep}{4pt}
-    \begin{tabularx}{0.98\textwidth}{lCCCCC}
-      \toprule
-      Язык / режим      & секций & символов & weak & релокаций & основной тип \\
-      \midrule
-      C++ \texttt{-O2}  & \tbd   & \tbd     & \tbd & \tbd      & \tbd         \\
-      Rust \texttt{-O2} & \tbd   & \tbd     & \tbd & \tbd      & \tbd         \\
-      Zig ReleaseFast   & \tbd   & \tbd     & \tbd & \tbd      & \tbd         \\
-      \bottomrule
-    \end{tabularx}
+    \IfFileExists{../results/table_symbols.tex}{%
+      \input{../results/table_symbols.tex}%
+    }{%
+      \fbox{\parbox{0.9\textwidth}{\centering
+        Не найден \texttt{results/table\_symbols.tex}. Сначала запустите
+        \texttt{scripts/report.py}.}}}%
   \end{center}
+
+  \smallskip
+  \scriptsize
+  Учитывается общее число релокаций; в отчёте дополнительно выводится
+  число отладочных релокаций. Основной тип --- наиболее частый тип
+  релокации для данной пары язык/режим.
 \end{frame}
 
 \begin{frame}{Время и память компиляции; работа линкера}
   \small
   \begin{center}
     \setlength{\tabcolsep}{4pt}
-    \begin{tabularx}{0.98\textwidth}{lCCCC}
-      \toprule
-      Язык  & время, мс (медиана) & Max RSS, МБ & размер после \texttt{-{}-gc-sections} & с LTO \\
-      \midrule
-      C++   & \tbd                & \tbd        & \tbd                                  & \tbd  \\
-      Rust  & \tbd                & \tbd        & \tbd                                  & \tbd  \\
-      Zig   & \tbd                & \tbd        & \tbd                                  & \tbd  \\
-      \bottomrule
-    \end{tabularx}
+    \IfFileExists{../results/table_time.tex}{%
+      \input{../results/table_time.tex}%
+    }{%
+      \fbox{\parbox{0.9\textwidth}{\centering
+        Не найден \texttt{results/table\_time.tex}. Сначала запустите
+        \texttt{scripts/report.py}.}}}%
   \end{center}
+
+  \smallskip
+  \scriptsize
+  Время компиляции --- сумма медиан по программам корпуса;
+  Max RSS --- максимум по программам. `.text*` sections и COMDAT groups
+  показывают число единиц, которые могут быть затронуты
+  \texttt{-{}-gc-sections}.
 \end{frame}
 
 \begin{frame}{Сравнение по ABI и совместимости (качественно)}
@@ -641,24 +634,56 @@ zig build-obj src.zig -O ReleaseFast -fllvm \
 
 \begin{frame}{Выводы}
   \begin{itemize}
-    \item \todo{Вывод 1: что показали размеры и секции (после измерений)}
-    \item \todo{Вывод 2: символы и релокации}
-    \item \todo{Вывод 3: цена компиляции}
-    \item \todo{Вывод 4: воспроизводимость}
+
+    \item \textbf{Размер \texttt{.o}.}
+    В режиме \texttt{O2} C++ и Rust дают близкий суммарный размер:
+    14\,232 и 14\,592 байт, тогда как Zig --- 311\,256 байт.
+    При \texttt{O2g} размер возрастает до 53\,640, 82\,104 и
+    4\,311\,752 байт соответственно; значительная часть этого роста
+    приходится на \texttt{.debug\_\*}.
+
+    \item \textbf{Секции, символы и релокации.}
+    При добавлении отладочной информации число секций увеличивается
+    у всех трёх языков: с 69 до 132 у C++, с 83 до 141 у Rust
+    и с 53 до 112 у Zig.
+    Число релокаций возрастает значительно сильнее:
+    56$\rightarrow$571, 53$\rightarrow$1\,242 и
+    5\,878$\rightarrow$69\,823.
+
+    \item \textbf{Стоимость компиляции.}
+    Переход от \texttt{O2} к \texttt{O2g} почти не меняет время
+    и Max RSS у C++ и Rust
+    (535$\rightarrow$546 мс и 177$\rightarrow$178 МБ;
+    224$\rightarrow$247 мс и 188$\rightarrow$189 МБ).
+    У Zig рост заметнее: 4\,457$\rightarrow$13\,615 мс
+    и 214$\rightarrow$322 МБ.
+
   \end{itemize}
-  \begin{block}{Гипотезы для проверки (не результаты)}
-    Шаблоны C++ дают больше weak/COMDAT-символов; в символах Rust путь и параметры инстанциации закодированы, а одноимённые сущности различаются хешем (legacy) или дизамбигуатором (v0); Zig даёт наименьшее число служебных секций.
-  \end{block}
-  \begin{alertblock}{Ограничения}
-    Одна архитектура и ОС, LLVM-бэкенд, небольшой корпус, конкретные версии компиляторов.
+\end{frame}
+
+\begin{frame}{Выводы}
+  \begin{itemize}
+    \item \textbf{Структура результатов.}
+    У C++ и Rust число COMDAT-групп составляет 8 и 2 соответственно
+    и не меняется между режимами; у Zig в этих данных COMDAT-группы
+    отсутствуют.
+    Для \texttt{O2g} основным типом релокации является
+    \texttt{R\_X86\_64\_32} для C++ и Rust и
+    \texttt{R\_X86\_64\_64} для Zig.
+  \end{itemize}
+    \begin{alertblock}{Ограничения}
+    Результаты относятся к данному корпусу программ, конкретным версиям
+    компиляторов и платформе x86-64 Linux; таблицы отражают суммарные
+    значения по корпусу.
   \end{alertblock}
 \end{frame}
+
 
 \begin{frame}{Заключение}
   \begin{itemize}
     \item Объектный файл~--- точка, где встречаются язык, компилятор, ABI и линкер.
     \item Общий знаменатель трёх языков~--- C~ABI; всё остальное определяется реализацией.
-    \item Репозиторий: исходники, скрипты сбора метрик, сырые данные доступны в \textbf{\href{https://github.com/InfernalKn1ght/cpp-object-files-talk}{репозитории}}.
+    \item Исходники, скрипты сбора метрик, сырые данные доступны в \textbf{\href{https://github.com/InfernalKn1ght/cpp-object-files-talk}{репозитории}}.
   \end{itemize}
   \vfill
 \end{frame}
