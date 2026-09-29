@@ -1,0 +1,695 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.16}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning}
+
+% ---------------------------------------------------------------------
+% Тема и общие настройки
+% ---------------------------------------------------------------------
+\usetheme{Madrid}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{bibliography item}[text]
+\setbeamerfont{normal text}{size=\normalsize}
+\setbeamerfont{frametitle}{size=\Large}
+\setbeamerfont{framesubtitle}{size=\large}
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.14}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+
+% ---------------------------------------------------------------------
+% Макросы
+% ---------------------------------------------------------------------
+% Символ/идентификатор «как есть» (подчёркивания и т.п. писать без экранирования)
+\newcommand{\sym}[1]{\texttt{\detokenize{#1}}}
+% Прямые кавычки в моноширинном тексте (без активных символов babel)
+\newcommand{\externC}{\texttt{extern~\textquotedbl C\textquotedbl}}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+% Пустая ячейка в таблицах результатов
+\newcommand{\tbd}{\textcolor{red}{\textbf{?}}}
+
+% ---------------------------------------------------------------------
+% Листинги
+% ---------------------------------------------------------------------
+\definecolor{deepblue}{rgb}{0,0,0.5}
+\definecolor{deepred}{rgb}{0.6,0,0}
+\definecolor{deepgreen}{rgb}{0,0.5,0}
+\definecolor{halfgray}{rgb}{0.5,0.5,0.5}
+
+\lstdefinelanguage{Rust}{
+  morekeywords={as,async,await,break,const,continue,crate,dyn,else,enum,extern,false,fn,for,if,impl,in,let,loop,match,mod,move,mut,pub,ref,return,self,Self,static,struct,super,trait,true,type,unsafe,use,where,while,macro_rules,println},
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  sensitive=true
+}
+
+\lstdefinelanguage{Go}{
+  morekeywords={break,case,chan,const,continue,default,defer,else,fallthrough,for,func,go,goto,if,import,interface,map,package,range,return,select,struct,switch,type,var},
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  sensitive=true
+}
+
+\lstdefinelanguage{Zig}{
+  morekeywords={align,break,callconv,catch,comptime,const,continue,defer,else,enum,error,export,extern,fn,for,if,inline,pub,return,struct,switch,test,try,union,unreachable,var,while},
+  morecomment=[l]{//},
+  morestring=[b]",
+  sensitive=true
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries\color{deepblue},
+  emphstyle=\ttfamily\color{deepred},
+  stringstyle=\color{deepgreen},
+  commentstyle=\itshape\color{halfgray},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  numbers=left,
+  numberstyle=\small\color{halfgray},
+  numbersep=8pt,
+  xleftmargin=2.4em,
+  xrightmargin=0.6em,
+  aboveskip=4pt,
+  belowskip=4pt,
+  rulesepcolor=\color{red!20!green!20!blue!20},
+  frame=shadowbox,
+  language=C++
+}
+
+% Примеры кода на слайдах: 13--15 строк, поэтому шрифт чуть мельче
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\footnotesize,
+  numberstyle=\footnotesize\color{halfgray}
+}
+
+% Короткие команды оболочки: без номеров строк
+\lstdefinestyle{shell}{
+  language=bash,
+  numbers=none,
+  xleftmargin=0.6em,
+  xrightmargin=0.6em
+}
+
+% ---------------------------------------------------------------------
+% Титульные данные
+% ---------------------------------------------------------------------
+\title[Представление объектного файла]{Представление объектного файла: C++, Rust, Zig}
+\subtitle{Форматы, символы, релокации, ABI и отладочная информация}
+\author{Аржаев Дмитрий}
+%\institute{\todo{Курс / кафедра}}
+\date{29.09.2026}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% =====================================================================
+\section{Введение}
+
+\begin{frame}{Зачем смотреть на объектный файл}
+  \begin{columns}[T]
+    \column{0.55\textwidth}
+    \begin{itemize}
+      \item Объектный файл («\texttt{.o}») --- результат компиляции одной единицы трансляции; вход линкера \cite[гл.~1--3]{levine}.
+      \item Именно в нём фиксируется всё, что язык обещает внешнему миру: имена, ABI, режимы связывания.
+      \item Три языка~--- C++, Rust, Zig: разные модели связывания и разная степень стандартизации ABI.
+    \end{itemize}
+    \column{0.45\textwidth}
+    \centering
+    \begin{tikzpicture}[node distance=4.5mm, every node/.style={font=\scriptsize},
+        box/.style={draw, rounded corners, minimum width=30mm, minimum height=7mm, align=center},
+        >=Stealth]
+      \node[box] (src) {исходник};
+      \node[box, below=of src] (cc) {компилятор};
+      \node[box, below=of cc, fill=yellow!30] (obj) {объектный файл};
+      \node[box, below=of obj] (ld) {линкер};
+      \node[box, below=of ld] (exe) {исполняемый файл};
+      \draw[->] (src) -- (cc);
+      \draw[->] (cc) -- (obj);
+      \draw[->] (obj) -- (ld);
+      \draw[->] (ld) -- (exe);
+    \end{tikzpicture}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{План и вопросы исследования}
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \begin{block}{План}
+      \begin{enumerate}
+        \item Обзор: форматы, секции, эволюция стандартов.
+        \item Особенности C++/Rust/Zig на собственных примерах.
+        \item Методология: метрики и стенд.
+        \item Результаты сравнения.
+      \end{enumerate}
+    \end{block}
+    \column{0.48\textwidth}
+    \begin{block}{Вопросы}
+      \begin{itemize}
+        \item Как различаются размер и состав \texttt{.o}?
+        \item Сколько работы остаётся линкеру?
+        \item Насколько совместим каждый язык с C~ABI?
+        \item Воспроизводим ли результат?
+      \end{itemize}
+    \end{block}
+  \end{columns}
+\end{frame}
+
+% =====================================================================
+\section{Обзор}
+% [~8 min]
+
+\begin{frame}{Форматы объектных файлов: эволюция и сравнение}
+  \begin{itemize}
+    \item Линия развития: \texttt{a.out} $\rightarrow$ COFF $\rightarrow$ ELF; PE выросла из COFF; Mach-O~--- формат семейства NeXTSTEP/macOS/iOS \cite{levine,pecoff,macho}.
+    \item Объектный файл на разных ОС: ELF (\texttt{ET\_REL}) \cite{tis}, COFF (\texttt{.obj}) \cite{pecoff}, Mach-O (\texttt{MH\_OBJECT}) \cite{macho}.
+  \end{itemize}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.90\textwidth}{lCCC}
+      \toprule
+                & ELF \cite{tis}       & PE/COFF \cite{pecoff} & Mach-O \cite{macho}        \\
+      \midrule
+      ОС        & Linux, BSD, Solaris  & Windows               & macOS, iOS                 \\
+      Единица   & секции               & секции                & сегменты $\to$ секции      \\
+      Имя кода  & \texttt{.text}       & \texttt{.text}        & \texttt{\_\_TEXT,\_\_text} \\
+      Каталог   & таблица секций       & таблица секций        & load commands              \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Структура relocatable ELF (\texttt{.o})}
+  \begin{columns}[T]
+    \column{0.42\textwidth}
+    \centering
+    \begin{tikzpicture}[every node/.style={font=\scriptsize, draw, minimum width=42mm, minimum height=6.5mm}]
+      \node[fill=blue!10] (h) {ELF header};
+      \node[below=0mm of h] (t) {\texttt{.text}};
+      \node[below=0mm of t] (d) {\texttt{.data} / \texttt{.bss} / \texttt{.rodata}};
+      \node[below=0mm of d] (s) {\texttt{.symtab} / \texttt{.strtab}};
+      \node[below=0mm of s] (r) {\texttt{.rela.*}};
+      \node[below=0mm of r] (g) {\texttt{.debug\_*} / \texttt{.eh\_frame}};
+      \node[below=0mm of g, fill=blue!10] (sh) {таблица заголовков секций};
+    \end{tikzpicture}
+    \column{0.58\textwidth}
+    \begin{itemize}
+      \item ELF header: класс (32/64), порядок байт, машина, тип файла \cite{tis}.
+      \item Таблица секций описывает содержимое; для \texttt{.o} она главная \cite{tis}.
+      \item Таблица сегментов (program headers) нужна загрузчику; у relocatable-файла обычно отсутствует \cite{tis}.
+      \item \texttt{.bss} (NOBITS) не занимает места в файле.
+      \item Подробнее: \texttt{man 5 elf}.
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Основные секции}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.90\textwidth}{lY}
+      \toprule
+      Секция \cite{tis}                                   & Назначение                                                  \\
+      \midrule
+      \texttt{.text}                                      & машинный код                                                \\
+      \texttt{.data}, \texttt{.bss}                       & инициализированные / нулевые изменяемые данные              \\
+      \texttt{.rodata}                                    & константы, строковые литералы                               \\
+      \texttt{.symtab}, \texttt{.strtab}                  & таблица символов и строк                                    \\
+      \texttt{.rela.text}, \texttt{.rela.*}               & записи релокаций                                            \\
+      \texttt{.eh\_frame}, \texttt{.gcc\_except\_table}   & раскрутка стека и обработка исключений \cite{itanium}       \\
+      \texttt{.group} / COMDAT                            & дедупликация inline-функций и шаблонов \cite{itanium}       \\
+      \texttt{.debug\_*}                                  & отладочная информация DWARF \cite{dwarf}                    \\
+      \texttt{.note.GNU-stack}                            & признак исполняемости стека \cite{maskray}                  \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Что стандарты говорят про объектный файл}
+  \begin{itemize}
+    \item \textbf{C++}: стандарт ISO/IEC 14882 описывает фазы трансляции, linkage и ODR, но не формат \texttt{.o}. Формат и ABI задают Itanium C++ ABI, System~V psABI и MSVC \cite{iso,itanium,psabi}.
+    \item \textbf{Rust}: ISO-стандарта нет; поведение описано в Rust Reference и RFC (например, RFC~2603 про mangling) \cite{rustref,rfc2603}.
+    \item \textbf{Zig}: язык описан в Language Reference; до версии 1.0 стабильность ABI и формата не гарантируется \cite{zigdoc}.
+  \end{itemize}
+  \bigskip
+  \alert{Вывод:} единственный «общий язык» между тремя компиляторами~--- C~ABI платформы.
+\end{frame}
+
+\begin{frame}{Как развитие C++ влияло на объектный файл}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.96\textwidth}{lYY}
+      \toprule
+      Стандарт & Что появилось                                & Следствие для \texttt{.o}                                                        \\
+      \midrule
+      C++98    & ODR, \externC, шаблоны, inline \cite{cppref} & mangling, weak/COMDAT-символы \cite{itanium}                                     \\
+      C++11    & \texttt{thread\_local}                       & TLS-секции и TLS-релокации \cite{drepperTLS}                                     \\
+      C++17    & inline-переменные \cite{cppref}              & COMDAT-группы для данных \cite{itanium}                                          \\
+      C++20    & модули \cite{cppref}                         & BMI как новый артефакт рядом с \texttt{.o}; формат не стандартизован \cite{cppref} \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+\end{frame}
+
+% =====================================================================
+\section{Особенности языков}
+% [~8 min]
+
+\begin{frame}{Символы в ELF}
+  \begin{itemize}
+    \item Запись символа: имя, значение, размер, тип, binding, visibility, индекс секции \cite{tis}.
+    \item Binding: \texttt{LOCAL}, \texttt{GLOBAL}, \texttt{WEAK}. Тип: \texttt{FUNC}, \texttt{OBJECT}, \texttt{TLS}, \texttt{SECTION}, \texttt{FILE} \cite{tis}.
+    \item Индекс \texttt{UND}~--- символ не определён в этом файле; его разрешит линкер \cite{tis}.
+  \end{itemize}
+  \medskip
+  Просмотр: \texttt{readelf -sW file.o}, \texttt{nm -C file.o}, \texttt{llvm-readobj -{}-symbols file.o}.
+\end{frame}
+
+\begin{frame}[fragile]{Свой пример: C++}
+\begin{lstlisting}[style=code, language=C++]
+namespace geom {
+  int area(int w, int h) {
+    return w * h;
+  }
+}
+template <class T>
+T add(T a, T b) {
+  return a + b;
+}
+template int add<int>(int, int);
+extern "C" int c_area(int w, int h) {
+  return geom::area(w, h);
+}
+\end{lstlisting}
+  \smallskip
+  \centering
+  \textit{Смотрим символы: \texttt{geom::area}, \texttt{add<int>}, \texttt{c\_area}.}
+\end{frame}
+
+\begin{frame}[fragile]{Свой пример: Rust 2024}
+\begin{lstlisting}[style=code, language=Rust, emph={i32,T}]
+pub mod geom {
+  pub fn area(w: i32, h: i32) -> i32 {
+    w * h
+  }
+}
+pub fn add<T: core::ops::Add<Output = T>>(a: T, b: T) -> T {
+  a + b
+}
+pub fn add_i32(a: i32, b: i32) -> i32 {
+  add(a, b)
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn c_area(w: i32, h: i32) -> i32 {
+  geom::area(w, h)
+}
+\end{lstlisting}
+  \smallskip
+  \centering
+  \textit{Смотрим символы: \texttt{geom::area}, \texttt{add\_i32} (в него подставлен \texttt{add::<i32>}), \texttt{c\_area}.}
+\end{frame}
+
+\begin{frame}[fragile]{Свой пример: Zig}
+\begin{lstlisting}[style=code, language=Zig, emph={i32,type,T}]
+const geom = struct {
+  fn area(w: i32, h: i32) i32 {
+    return w * h;
+  }
+};
+fn add(comptime T: type, a: T, b: T) T {
+  return a + b;
+}
+export fn add_i32(a: i32, b: i32) i32 {
+  return add(i32, a, b);
+}
+export fn c_area(w: i32, h: i32) i32 {
+  return geom.area(w, h);
+}
+\end{lstlisting}
+  \smallskip
+  \centering
+  \textit{Экспортируются только \texttt{add\_i32} и \texttt{c\_area}; \texttt{geom.area} и \texttt{add} остаются внутренними.}
+\end{frame}
+
+\begin{frame}[fragile]{Как смотреть символы и релокации}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.48\textwidth}
+    \textbf{Символы}
+    \begin{lstlisting}[style=shell]
+readelf -sW file.o
+nm -C file.o
+llvm-readobj --symbols file.o
+    \end{lstlisting}
+    \column{0.48\textwidth}
+    \textbf{Релокации}
+    \begin{lstlisting}[style=shell]
+readelf -rW file.o
+objdump -dr file.o
+    \end{lstlisting}
+  \end{columns}
+  \bigskip
+  Инструменты: GNU binutils \cite{binutils} и LLVM \cite{llvmtools}.
+\end{frame}
+
+\begin{frame}{Mangling: C++ (Itanium ABI)}
+  \begin{itemize}
+    \item Имя кодирует область видимости, имя и типы параметров: префикс \sym{_Z}, вложенные имена в \sym{N...E} \cite{itanium}.
+    \item \externC{} отключает mangling: остаётся имя \sym{c_area} \cite{itanium}.
+  \end{itemize}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.80\textwidth}{lY}
+      \toprule
+      Сущность                                & Символ                             \\
+      \midrule
+      \texttt{geom::area(int, int)}           & \sym{_ZN4geom4areaEii}             \\
+      \texttt{add<int>(int, int)}             & \sym{_Z3addIiET_S0_S0_}            \\
+      \texttt{c\_area} (\externC)             & \sym{c_area}                       \\
+      vtable / typeinfo класса                & префиксы \sym{_ZTV}, \sym{_ZTI}    \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \medskip
+  Проверка: \texttt{c++filt}, \texttt{nm} на \texttt{.o}, Compiler Explorer \cite{godbolt}.
+\end{frame}
+
+\begin{frame}{Mangling: Rust и Zig}
+  \begin{itemize}
+    \item \textbf{Rust v0} (RFC 2603): префикс \sym{_R} и структурированное кодирование пути и параметров символа \cite{rfc2603}. Стабильный \texttt{rustc} использует эту схему по умолчанию начиная с Rust~1.97; версию \texttt{rustc} нужно зафиксировать в эксперименте \cite{rustcbook}.
+    \item \textbf{Rust legacy}: историческая схема с именами вида \sym{_ZN4demo4geom4area17h<16 hex>E}; до Rust~1.97 была схемой по умолчанию \cite{rustcbook}.
+    \item \textbf{Rust FFI}: \texttt{\#[unsafe(no\_mangle)]} и \externC{} --- имя экспортируемого символа задаётся явно \cite{rustref}.
+    \item \textbf{Zig}: \texttt{export fn} даёт символ с исходным именем (\sym{c_area}); неэкспортируемые функции остаются внутренними \cite{zigdoc}.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Релокации}
+  \small
+  \begin{itemize}
+    \item Компилятор не знает финальных адресов, поэтому оставляет в \texttt{.rela.*} записи: смещение, тип, символ, addend \cite{tis}.
+    \item Линкер вычисляет значение по формуле типа \cite{psabi}: $S$~--- адрес символа, $A$~--- addend, $P$~--- изменяемое место, $L$~--- запись в PLT, $G$~--- запись в GOT, $GOT$~--- адрес GOT.
+  \end{itemize}
+  \footnotesize
+  \begin{center}
+    \renewcommand{\arraystretch}{1.0}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabularx}{0.98\textwidth}{lcY}
+      \toprule
+      Тип (x86-64)                  & Формула      & Где встречается                                      \\
+      \midrule
+      \texttt{R\_X86\_64\_64}       & $S+A$        & 64-битный абсолютный адрес \cite{psabi}              \\
+      \texttt{R\_X86\_64\_PC32}     & $S+A-P$      & доступ к данным относительно PC \cite{bender}        \\
+      \texttt{R\_X86\_64\_PLT32}    & $L+A-P$      & вызов внешней функции \cite{bender}                  \\
+      \texttt{R\_X86\_64\_GOTPCREL} & $G+GOT+A-P$  & доступ через GOT \cite{bender}                       \\
+      \texttt{R\_X86\_64\_TPOFF32}  & TLS-смещение & thread-local в исполняемом файле \cite{drepperTLS}   \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  Все три языка собираются через LLVM-бэкенд, поэтому наборы релокаций близки, но не обязаны совпадать. Их число зависит от PIC/PIE, TLS и отладочной информации (в \texttt{.rela.debug\_*} их много) \cite{maskray}.
+\end{frame}
+
+\begin{frame}{ABI и calling conventions}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.86\textwidth}{lCC}
+      \toprule
+                                & System V AMD64 \cite{psabi}   & Microsoft x64 \cite{pecoff} \\
+      \midrule
+      Целочисленные аргументы   & rdi, rsi, rdx, rcx, r8, r9    & rcx, rdx, r8, r9            \\
+      Вещественные аргументы    & xmm0--xmm7                    & xmm0--xmm3                  \\
+      Возврат                   & rax (rdx), xmm0               & rax, xmm0                   \\
+      Shadow space              & нет                           & 32 байта                    \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \begin{itemize}
+    \item \textbf{C++}: соглашение платформы; на Linux с GCC/Clang layout классов и vtable задаёт Itanium C++ ABI, на Windows используется ABI MSVC \cite{itanium}.
+    \item \textbf{Rust}: \texttt{extern~\textquotedbl Rust\textquotedbl} --- ABI не является стабильным контрактом. Для FFI используют \externC{} (ABI функций) и \texttt{\#[repr(C)]} (layout типов) \cite{rustref}.
+    \item \textbf{Zig}: соглашение задаётся через \texttt{callconv} (\texttt{.C} в старых версиях, \texttt{.c} в новых); \texttt{export} использует C~ABI \cite{zigdoc}.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Исключения, RTTI и метаданные}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.98\textwidth}{lYYY}
+      \toprule
+                         & C++ \cite{itanium}            & Rust \cite{rustref}                                & Zig \cite{zigdoc}       \\
+      \midrule
+      Ошибки             & исключения                    & \texttt{Result}; \texttt{panic} (unwind или abort) & error union (значение)  \\
+      Раскрутка стека    & \texttt{.eh\_frame}, LSDA     & \texttt{.eh\_frame} при \texttt{panic=unwind}      & не требуется для ошибок \\
+      RTTI               & typeinfo, vtable-символы      & нет аналога; \texttt{TypeId} на уровне языка       & нет                     \\
+      Метаданные модулей & BMI (C++20), вне \texttt{.o}  & метаданные крейта (\texttt{rlib}), вне \texttt{.o} & нет                     \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \medskip
+  Практическая проверка: сравнить \texttt{.eh\_frame}, \texttt{.gcc\_except\_table} и число символов \sym{_ZTV}/\sym{_ZTI} на одном коде с \texttt{-fno-exceptions} / \texttt{panic=abort}.
+\end{frame}
+
+\begin{frame}{Отладочная информация}
+  \begin{itemize}
+    \item ELF: DWARF (v5 в современных компиляторах): \texttt{.debug\_info}, \texttt{.debug\_abbrev}, \texttt{.debug\_line}, \texttt{.debug\_str}, \texttt{.debug\_line\_str}, \texttt{.debug\_rnglists} \cite{dwarf}.
+    \item Windows: CodeView/PDB. macOS: DWARF в объектных файлах, сборка в dSYM.
+    \item Управление: \texttt{-g}, \texttt{-gsplit-dwarf}, сжатие секций; Rust: \texttt{-C debuginfo=0|1|2} \cite{rustcbook}; Zig: режим \texttt{Debug} содержит отладочную информацию \cite{zigdoc}.
+    \item В \texttt{.o} DWARF сильно нагружает линкер: релокации ссылаются на \texttt{.text} и строки.
+  \end{itemize}
+\end{frame}
+
+% =====================================================================
+\section{Методология}
+% [~4 min]
+
+\begin{frame}{Метрики: объектный файл}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.98\textwidth}{lYY}
+      \toprule
+      Метрика                    & Инструмент                                          & Пояснение                                                                                  \\
+      \midrule
+      Размер \texttt{.o} и по секциям & \texttt{size -A}, \texttt{readelf -SW}         & total, \texttt{.text}, \texttt{.data}, \texttt{.rodata}, \texttt{.debug\_*}, \texttt{.eh\_frame} \\
+      Число секций               & \texttt{readelf -SW}                                & ---                                                                                        \\
+      Символы                    & \texttt{nm}, \texttt{readelf -sW}                   & defined / undefined; local / global / weak                                                 \\
+      Релокации                  & \texttt{readelf -rW}                                & число и типы; с \texttt{-g} и без                                                          \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \smallskip
+  Сложность ABI (mangling, исключения, RTTI, метаданные) не сводится к одному числу и представлена качественной таблицей. Инструменты: binutils \cite{binutils}, LLVM \cite{llvmtools}, заметки \cite{maskray}.
+\end{frame}
+
+\begin{frame}{Метрики: сборка и линковка}
+  \small
+  \begin{center}
+    \begin{tabularx}{0.98\textwidth}{lYY}
+      \toprule
+      Метрика                       & Инструмент                                              & Пояснение                    \\
+      \midrule
+      Время и память компиляции     & \texttt{hyperfine} \cite{hyperfine}, \texttt{/usr/bin/time -v} & медиана и разброс, Max RSS \\
+      Работа линкера                & размер после \texttt{-{}-gc-sections}, LTO \cite{taylor} & undefined, релокации, DCE    \\
+      Совместимость с C~ABI         & чек-лист                                                & вызов из C, вызов C, стабильность \\
+      Воспроизводимость             & \texttt{sha256sum}                                      & две сборки в разных каталогах \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \smallskip
+  Метрики фиксируют как свойства объектного файла, так и стоимость сборки и последующей линковки.
+\end{frame}
+
+\begin{frame}{Стенд и корпус}
+  \begin{itemize}
+    \item Платформа: x86-64 Linux, ELF; \texttt{clang++ 22.1.8}, \texttt{rustc 1.98.1}, \texttt{zig 0.16.0}; \texttt{readelf 2.47}.
+    \item В сырых данных присутствуют режимы \texttt{O0g}, \texttt{O2}, \texttt{O2g}, \texttt{Os}; таблицы \texttt{report.py} по умолчанию строятся только для \texttt{O2} и \texttt{O2g}, а графики --- для \texttt{O2g}.
+    \begin{itemize}
+      \item C++: \texttt{-O0}, \texttt{-O2}, \texttt{-Os};
+      \item Rust: \texttt{-C opt-level=0|2|s} \cite{rustcbook};
+      \item Zig: \texttt{Debug}, \texttt{ReleaseFast}, \texttt{ReleaseSmall} \cite{zigdoc}.
+    \end{itemize}
+    \item Корпус: 5 программ на каждый язык: \texttt{demo}, \texttt{generics}, \texttt{strings}, \texttt{errors}, \texttt{cabi}.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Команды сборки}
+\begin{lstlisting}[style=shell]
+# C++
+clang++ -c -O2 -g src.cpp -o out.o
+
+# Rust
+rustc --crate-type=lib --emit=obj -C opt-level=2 \
+  -C debuginfo=2 -C codegen-units=1 src.rs -o out.o
+
+# Zig
+zig build-obj src.zig -O ReleaseFast -fllvm \
+  -femit-bin=out.o
+\end{lstlisting}
+  \smallskip
+  Для честности сравнения в стенде используется LLVM-бэкенд у всех трёх (в Zig явно \texttt{-fllvm}) \cite{zigdoc}; у Rust задано \texttt{codegen-units=1}, чтобы получить один \texttt{.o} \cite{rustcbook}. Это ограничение эксперимента, а не свойство языков.
+\end{frame}
+
+\begin{frame}{Воспроизводимость}
+  \begin{itemize}
+    \item Собираем один и тот же исходник дважды: в разных каталогах и в разное время \cite{reprod}.
+    \item Сравниваем \texttt{sha256} объектных файлов; при отличии смотрим \texttt{diff} вывода \texttt{readelf}/\texttt{objdump}.
+    \item Типичные источники различий: абсолютные пути в DWARF, метки времени, хэши в символах \cite{reprod}.
+    \item Инструменты: \texttt{-ffile-prefix-map} (C++) \cite{reprod}, \texttt{-{}-remap-path-prefix} (Rust) \cite{rustcbook}.
+  \end{itemize}
+\end{frame}
+
+% =====================================================================
+\section{Результаты}
+
+\begin{frame}{Размер объектного файла}
+  \small
+  \begin{center}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabularx}{0.98\textwidth}{lCCCCC}
+      \toprule
+      Язык / режим      & total & \texttt{.text} & data+rodata & \texttt{.debug\_*} & \texttt{.eh\_frame} \\
+      \midrule
+      C++ \texttt{-O2}  & \tbd  & \tbd           & \tbd        & \tbd               & \tbd                \\
+      Rust \texttt{-O2} & \tbd  & \tbd           & \tbd        & \tbd               & \tbd                \\
+      Zig ReleaseFast   & \tbd  & \tbd           & \tbd        & \tbd               & \tbd                \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \smallskip
+  \centering
+  \IfFileExists{results/sizes.csv}{%
+    \begin{tikzpicture}
+      \begin{axis}[ybar stacked, width=0.7\textwidth, height=4.5cm,
+          symbolic x coords={cpp,rust,zig}, xtick=data, ylabel={байты},
+          legend style={font=\tiny}, tick label style={font=\tiny}]
+        \addplot table[x=lang,y=text,col sep=comma] {results/sizes.csv};
+        \addplot table[x=lang,y=data,col sep=comma] {results/sizes.csv};
+        \addplot table[x=lang,y=rodata,col sep=comma] {results/sizes.csv};
+        \addplot table[x=lang,y=debug,col sep=comma] {results/sizes.csv};
+        \legend{.text,.data,.rodata,.debug}
+      \end{axis}
+    \end{tikzpicture}}{%
+    \fbox{\parbox{0.8\textwidth}{\centering\scriptsize
+        График появится, когда будет создан \texttt{results/sizes.csv}\par
+        (колонки: lang,text,data,rodata,debug).}}}
+\end{frame}
+
+\begin{frame}{Символы, секции и релокации}
+  \small
+  \begin{center}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabularx}{0.98\textwidth}{lCCCCC}
+      \toprule
+      Язык / режим      & секций & символов & weak & релокаций & основной тип \\
+      \midrule
+      C++ \texttt{-O2}  & \tbd   & \tbd     & \tbd & \tbd      & \tbd         \\
+      Rust \texttt{-O2} & \tbd   & \tbd     & \tbd & \tbd      & \tbd         \\
+      Zig ReleaseFast   & \tbd   & \tbd     & \tbd & \tbd      & \tbd         \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Время и память компиляции; работа линкера}
+  \small
+  \begin{center}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabularx}{0.98\textwidth}{lCCCC}
+      \toprule
+      Язык  & время, мс (медиана) & Max RSS, МБ & размер после \texttt{-{}-gc-sections} & с LTO \\
+      \midrule
+      C++   & \tbd                & \tbd        & \tbd                                  & \tbd  \\
+      Rust  & \tbd                & \tbd        & \tbd                                  & \tbd  \\
+      Zig   & \tbd                & \tbd        & \tbd                                  & \tbd  \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Сравнение по ABI и совместимости (качественно)}
+  \footnotesize
+  \begin{center}
+    \begin{tabularx}{0.98\textwidth}{lYYY}
+      \toprule
+                                 & C++ \cite{itanium}                      & Rust \cite{rustref}                       & Zig \cite{zigdoc}                    \\
+      \midrule
+      Mangling                   & Itanium ABI (Linux/Clang)               & v0 (по умолчанию с Rust~1.97)             & без mangling для \texttt{export}     \\
+      Стабильный ABI языка       & нет (ABI задают платформа и реализация)   & нет; для FFI используют C~ABI             & нет                                  \\
+      Вызов из C без обёрток     & \externC                                & \externC{} + \texttt{no\_mangle}          & \texttt{export}                      \\
+      Исключения / раскрутка     & есть                                    & \texttt{panic=unwind}                     & нет для ошибок                       \\
+      RTTI-символы               & есть                                    & нет                                       & нет                                  \\
+      Метаданные вне \texttt{.o} & BMI (модули)                            & \texttt{rlib}-метаданные                  & нет                                  \\
+      \bottomrule
+    \end{tabularx}
+  \end{center}
+  \medskip
+  Таблицу нужно проверить на выбранных версиях компиляторов.
+\end{frame}
+
+\begin{frame}{Выводы}
+  \begin{itemize}
+    \item \todo{Вывод 1: что показали размеры и секции (после измерений)}
+    \item \todo{Вывод 2: символы и релокации}
+    \item \todo{Вывод 3: цена компиляции}
+    \item \todo{Вывод 4: воспроизводимость}
+  \end{itemize}
+  \begin{block}{Гипотезы для проверки (не результаты)}
+    Шаблоны C++ дают больше weak/COMDAT-символов; в символах Rust путь и параметры инстанциации закодированы, а одноимённые сущности различаются хешем (legacy) или дизамбигуатором (v0); Zig даёт наименьшее число служебных секций.
+  \end{block}
+  \begin{alertblock}{Ограничения}
+    Одна архитектура и ОС, LLVM-бэкенд, небольшой корпус, конкретные версии компиляторов.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Заключение}
+  \begin{itemize}
+    \item Объектный файл~--- точка, где встречаются язык, компилятор, ABI и линкер.
+    \item Общий знаменатель трёх языков~--- C~ABI; всё остальное определяется реализацией.
+    \item Репозиторий: исходники, скрипты сбора метрик, сырые данные доступны в \textbf{\href{https://github.com/InfernalKn1ght/cpp-object-files-talk}{репозитории}}.
+  \end{itemize}
+  \vfill
+\end{frame}
+
+% =====================================================================
+\begin{frame}[allowframebreaks]{Источники}
+  \small
+  \begin{thebibliography}{99}
+    \bibitem{tis} TIS Committee. \emph{Tool Interface Standard (TIS) Executable and Linking Format (ELF) Specification}, v1.2, 1995.
+    \bibitem{levine} J.~R.~Levine. \emph{Linkers and Loaders}. Morgan Kaufmann, 2000.
+    \bibitem{psabi} System V Application Binary Interface, AMD64 Architecture Processor Supplement (x86-64 psABI). \texttt{gitlab.com/x86-psABIs}.
+    \bibitem{itanium} Itanium C++ ABI. \texttt{itanium-cxx-abi.github.io/cxx-abi}.
+    \bibitem{pecoff} Microsoft. PE Format; x64 calling convention. \texttt{learn.microsoft.com}.
+    \bibitem{macho} Apple. \emph{Mach-O File Format Reference} (архивная документация).
+    \bibitem{dwarf} DWARF Debugging Information Format, Version 5. \texttt{dwarfstd.org}.
+    \bibitem{iso} ISO/IEC 14882 --- Programming languages --- C++.
+    \bibitem{cppref} cppreference.com: inline specifier, linkage, modules.
+    \bibitem{taylor} I.~L.~Taylor. Linkers (серия статей). \texttt{airs.com/ian}, 2007--2008.
+    \bibitem{drepperTLS} U.~Drepper. \emph{ELF Handling For Thread-Local Storage}, 2013.
+    \bibitem{bender} E.~Bendersky. Position Independent Code (PIC) in shared libraries on x64. \texttt{eli.thegreenplace.net}.
+    \bibitem{maskray} F.~Song. MaskRay blog. \texttt{maskray.me}.
+    \bibitem{rfc2603} Rust RFC 2603: Symbol Name Mangling v0.
+    \bibitem{rustref} The Rust Reference (type layout, ABI, linkage).
+    \bibitem{rustcbook} The rustc book: codegen options, symbol mangling.
+    \bibitem{zigdoc} Zig Language Reference. \texttt{ziglang.org/documentation}.
+    \bibitem{reprod} Reproducible Builds: documentation. \texttt{reproducible-builds.org}.
+    \bibitem{godbolt} Compiler Explorer. \texttt{godbolt.org}.
+    \bibitem{binutils} GNU Binutils documentation. \texttt{sourceware.org/binutils/docs}.
+    \bibitem{llvmtools} LLVM Command Guide (\texttt{llvm-readobj} и др.). \texttt{llvm.org/docs/CommandGuide}.
+    \bibitem{hyperfine} D.~Peter. hyperfine: command-line benchmarking tool. \texttt{github.com/sharkdp/hyperfine}.
+  \end{thebibliography}
+\end{frame}
+
+\end{document}

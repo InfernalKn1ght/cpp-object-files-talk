@@ -1,0 +1,6 @@
+cpp: clang version 22.1.8
+rust: rustc 1.98.1 (48a229cea 2026-09-01) (Arch Linux rust 1:1.98.1-1)
+zig: 0.16.0
+readelf: GNU readelf (GNU Binutils) 2.47
+platform: Linux-7.2.7-arch1-1-x86_64-with-glibc2.44
+machine: x86_64
